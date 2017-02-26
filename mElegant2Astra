@@ -1,0 +1,114 @@
+#!/bin/bash
+#\
+
+#
+# mElegant2Astra
+# Convert elegant particle file (at a given location) to ASTRA format (at a given time).
+# - The transverse coordinates (x,y,px,py) and the clock t of the reference particle are all set to zero
+# - The longitudinal coordinate z (centroid of the bunch) of the reference particle can be set, and the default value is 0.
+# Created by M. Borland, ANL/APS
+#
+# J. Zhu, DESY
+# 11/01/2014: Change the output data to high resolution
+# 12/08/2014: Using pz instead of p to calculate s ("-define=column,s,t c_mks * pz = sqr 1 + sqrt / *,units=m" \)
+# 03/05/2015: 
+# Change to bash shell;
+# Change the method of calculation of z (calculate dt first, then z); 
+# Add the option to set longitudinal centroid z
+# 05/05/2015: Fixed one problem
+# 1. The sign of charge in ASTRA is negative for electrons
+
+if [ $# -lt 2 ]; then
+        echo "Usage: mElegant2Astra <input> <output> <zShift>(optional)"
+        exit 1
+fi
+
+input=$1
+output=$2
+zShift=$3
+
+if [ $(echo "$(echo "$zShift" | awk '{printf "%.15f",$1}') != 0" | bc) -eq 0 ]; then
+    zShift=0;
+fi
+
+if [ ! -f $input ]; then echo "Not found: $input"; exit 1; fi
+
+if [ -f $output ]; then echo "In use: $output"; exit 1; fi
+
+# set tmpRoot = tmp-`date +%s%N`
+tmpRoot=tmp
+
+# data structure in ASTRA
+# x   y   z   px  py  pz  clock charge particleIndex statusFlag
+# x   y   dz  px  py dpz  clock charge particleIndex statusFlag
+# ......
+# particleIndex
+# 1: electron
+# statusFlag
+# 3: trajector probe particle
+# 5: standard particle
+#
+# mev=1e-6*mc^2/qe~0.5109991
+sddsconvert \
+    $input -pipe=out -retain=column,t,p,x,xp,y,yp \
+| sddsprocess -pipe=in $tmpRoot.1 \
+    "-define=column,pz,p xp sqr yp sqr + 1 + sqrt / mev * 1e6 *,units=eV" \
+    "-define=column,px,pz xp *,units=eV" \
+    "-define=column,py,pz yp *,units=eV"
+
+# Process to find the average pz and s coordinates, then subtract from all coordinates.
+# betaz=pz/sqrt(pz^2+1), in RPN it is "pz = sqr 1 + sqrt /"
+# The bunch head is at t<0 and z>0, therefore t is defined as "t0-t"
+sddsprocess \
+    $tmpRoot.1 -pipe=out -delete=parameter,* -process=*,ave,%s0 \
+    "-redefine=column,t,t0 t -,units=s" \
+    "-define=column,z,t c_mks * pz = sqr 1 + sqrt / *,units=m" \
+    "-redefine=column,pz,pz pz0 -,units=eV" \
+    "-redefine=column,x,x z xp * +,units=m" \
+    "-redefine=column,y,y z yp * +,units=m" \
+| sddsprocess \
+    -pipe=in $tmpRoot.2 "-delete=col,p,xp,yp"
+
+# Create a sdds file with only one row for the reference particle
+# First create a parameter 'pz', then use 'sddscollapse' to create a sdds file with one column of data 'pz'
+sddsprocess \
+    $tmpRoot.1 -pipe=out -process=pz,ave,%s \
+| sddscollapse \
+    -pipe \
+| sddsprocess \
+    -pipe=in $tmpRoot.3 -process=Charge,first,Charge \
+    "-redefine=column,px,0,units=eV" \
+    "-redefine=column,py,0,units=eV" \
+    "-redefine=column,x,0,units=m" \
+    "-redefine=column,y,0,units=m" \
+    "-redefine=column,t,0,units=ns" \
+    "-redefine=column,z,$zShift,units=m" 
+
+# Combine the reference data and the particle-by-particle offset data
+# Note: There is sign for charge in ASTRA particle files, here we assume electrons with minus sign
+sddscombine \
+    $tmpRoot.3 $tmpRoot.2 -merge -pipe=out \
+    -retain=column,x,y,z,t,px,py,pz \
+| sddsprocess \
+    -pipe \
+    "-redefine=column,q,Charge n_rows / -1e9 *,units=nC" \
+    "-redefine=column,particleIndex,1,type=long" \
+    "-redefine=column,statusFlag,5,type=long" \
+| sdds2plaindata -pipe=in $output \
+    -outputMode=ascii -noRowCount -separator=' '\
+    -column=x,format=%20.12e \
+    -column=y,format=%20.12e \
+    -column=z,format=%20.12e \
+    -column=px,format=%20.12e \
+    -column=py,format=%20.12e \
+    -column=pz,format=%20.12e \
+    -column=t,format=%20.12e \
+    -column=q,format=%20.12e \
+    -column=particleIndex,format=%4ld \
+    -column=statusFlag,format=%4ld 
+
+rm $tmpRoot.1 $tmpRoot.2 $tmpRoot.3
+
+echo "------------------------------------------------------------------------"
+echo "Particle file converted: ELEGANT --> ASTRA "
+echo "------------------------------------------------------------------------"

@@ -1,0 +1,254 @@
+#!/bin/bash
+#\
+
+# mlineplot
+# Plot simulation results from elegant
+# Jun Zhu, DESY
+# Created on 05/05/2015
+# Last modified on 14/12/2016
+# Add the betaBeam plot
+# Revised and tested in Ubuntu14.04, 28/05/2016
+
+show_usage() {
+    echo -e "\nUsage mElegantPlot <rootname> <plotname> -<short option> --<long option> <value>"
+    echo -e "\nrootname: root-name of the ELEGANT file"
+    echo -e "\nplotname: twiss, eta, R??(T???), longitudinalDispersion, x, Sxy, betaBeam, enxy, St, psi"
+    echo -e "\n--postscript: output ps script files, otherwise plot on screen"
+    echo -e "\n--xMin, XMax, yMin, yMax: limit of the plot axis"
+}
+
+if [ $# -lt 2 ]; then show_usage; exit 1; fi
+
+rootname=$1
+plotname=$2
+output=
+xMin=0.0
+xMax=0.0
+yMin=0.0
+yMax=0.0
+
+tk=2 # thickness
+pyfactor=0.15 # size of the profile plot
+pyoffset=0.4 # y offset of the profile plot
+
+TEMP=`getopt -o h -l postscript,xMin:,xMax:,yMin:,yMax: -- "${@:3}"`
+if [ $? -ne 0 ]; then exit 1; fi
+
+eval set -- "$TEMP"
+
+while true; do
+    case "$1" in
+        --postscript) output=postscript; shift;;
+        --xMin) xMin=$2; shift 2;;
+        --xMax) xMax=$2; shift 2;;
+        --yMin) yMin=$2; shift 2;;
+        --yMax) yMax=$2; shift 2;;
+        --) break;;
+        *) echo -e "\nError: Unknow argument $1!"; exit 1;;
+    esac
+done
+
+if [ ! $output ]; then
+    outputDevice=motif
+else
+    outputDevice="crpostscript -output=$plotname.ps"
+    rm $plot.ps 2>/dev/null
+fi
+
+### Twiss plot
+if [ $plotname == "twiss" ]; then
+    if [ ! -f $rootname.twi ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.twi or $rootname.mag not found!"; exit 1
+    fi
+    sddsplot \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,betax -graphic=line,type=1,thickness=$tk -yscales=id=beta $rootname.twi \
+        -col=s,betay -graphic=line,type=2,thickness=$tk -yscales=id=beta $rootname.twi \
+        -col=s,etax -graphic=line,type=3,thickness=$tk -yscales=id=etax $rootname.twi \
+        -col=s,etaxp -graphic=line,type=6,thickness=$tk -yscales=id=etaxp $rootname.twi \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice 
+    exit 0
+fi
+
+### phase advance plot
+if [ $plotname == "psi" ]; then
+    if [ ! -f $rootname.twi ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.twi or $rootname.mag not found!"; exit 1
+    fi
+    sddsplot \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,psix -graphic=line,type=1,thickness=$tk -yscales=id=psi $rootname.twi \
+        -col=s,psiy -graphic=line,type=2,thickness=$tk -yscales=id=psi $rootname.twi \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+### beta function plot
+if [ $plotname == "beta" ]; then
+    if [ ! -f $rootname.twi ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.twi or $rootname.mag not found!"; exit 1
+    fi
+    sddsplot \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,betax -graphic=line,type=1,thickness=$tk -yscales=id=beta $rootname.twi \
+        -col=s,betay -graphic=line,type=2,thickness=$tk -yscales=id=beta $rootname.twi \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice 
+    exit 0
+fi
+
+### 1st order dispersion plot
+if [ $plotname == "eta" ]; then
+    if [ ! -f $rootname.twi ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.twi or $rootname.mag not found!"; exit 1
+    fi
+    sddsplot \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,etax -graphic=line,type=3,thickness=$tk -yscales=id=etax $rootname.twi \
+        -col=s,etaxp -graphic=line,type=6,thickness=$tk -yscales=id=etaxp $rootname.twi \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+### R?? and T??? evolution plot
+if [ $(echo $plotname | cut -c 1) == "R" ] || [ $(echo $plotname | cut -c 1) == "T" ]; then
+    if [ ! -f $rootname.mat ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.mat or $rootname.mag not found!"; exit 1
+    fi
+    sddsplot \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,$plotname -graphic=line,type=1,thickness=$tk -yscales=id=$plotname -factor=yMultiplier=1e3 $rootname.mat \
+        -yLabel="$(echo $plotname | cut -c 1)\$b$(echo $plotname | cut -c 2-)\$n (mm)" \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+### Plot R56 and T566 
+if [ $plotname == "longitudinalDispersion" ]; then
+    if [ ! -f $rootname.mat ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.mat or $rootname.mag not found!"; exit 1
+    fi
+    sddsplot \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,R56 -graphic=line,type=1,thickness=$tk -yscales=id=R56 -factor=yMultiplier=1e3 $rootname.mat \
+        -yLabel="R\$b56\$n \(mm\)" \
+        -col=s,T566 -graphic=line,type=2,thickness=$tk -yscales=id=T566 -factor=yMultiplier=1e3 $rootname.mat \
+        -yLabel="T\$b566\$n \(mm\)" \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+### Transverse coordinate evolution plot
+if [ $plotname == "x" ]; then
+    if [ ! -f $rootname.flr ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.flr or $rootname.mag not found!"; exit 1
+    fi               
+    sddsplot \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,X -graphic=line,type=1,thickness=$tk -yscales=id=x $rootname.flr \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+### beta function of the beam plot
+if [ $plotname == "betaBeam" ]; then
+    if [ ! -f $rootname.sig ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
+    fi
+    sddsplot \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,betaxBeam -graphic=line,type=1,thickness=$tk -yscales=id=beta $rootname.sig \
+        -col=s,betayBeam -graphic=line,type=2,thickness=$tk -yscales=id=beta $rootname.sig \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice 
+    exit 0
+fi
+
+### beam size evolution
+if [ $plotname == "Sxy" ]; then
+    if [ ! -f $rootname.sig ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
+    fi               
+    sddsplot \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,Sx -graphic=line,type=1,thickness=$tk -yscales=id=beamSize -factor=yMultiplier=1e3 $rootname.sig \
+        -col=s,Sy -graphic=line,type=2,thickness=$tk -yscales=id=beamSize -factor=yMultiplier=1e3 \
+        -yLabel="\$gs\$r\$bx\$n\, \$gs\$r\$by\$n \(mm\)" $rootname.sig \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+### Beta function calculated with beam parameters
+if [ $plotname == "betaBeam" ]; then
+    if [ ! -f $rootname.sig ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
+    fi               
+    sddsplot \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,betaxBeam -graphic=line,type=1,thickness=$tk -yscales=id=betaBeam $rootname.sig \
+        -col=s,betayBeam -graphic=line,type=2,thickness=$tk -yscales=id=betaBeam \
+        -yLabel="\$gb\$r\$bx\,beam\$n\, \$gb\$r\$by\,beam\$n \(m\)" $rootname.sig \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+### Geometric emittance evolution
+if [ $plotname == "enxy" ]; then
+    if [ ! -f $rootname.sig ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
+    fi               
+    sddsplot \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,enx -graphic=line,type=1,thickness=$tk -yscales=id=emittance -factor=yMultiplier=1e6 \
+        -yLabel="\$ge\$r\$bx\,n\$n\, \$ge\$r\$by\,n\$n \(\$gm\$rm\)" $rootname.sig \
+        -col=s,eny -graphic=line,type=2,thickness=$tk -yscales=id=emittance -factor=yMultiplier=1e6 \
+        -yLabel="\$ge\$r\$bx\,n\$n\, \$ge\$r\$by\,n\$n \(\$gm\$rm\)" $rootname.sig \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+### Bunch duration evolution
+if [ $plotname == "St" ]; then
+    if [ ! -f $rootname.sig ] || [ ! -f $rootname.mag ]; then
+        echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
+    fi
+    tMax=$(sddsprocess $rootname.sig -pipe=out -process=St,maximum,tMax | sdds2stream -pipe=in -par=tMax)
+    if [ $(echo $tMax | awk '{if($1 < 5e-13) {printf "%i",1} else {printf "%i",0}}') -eq 1 ]; then
+        yMtpl=1e15
+        tUnit=fs
+    else
+        yMtpl=1e12
+        tUnit=ps
+    fi
+    sddsplot \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -col=s,St -graphic=line,type=1,thickness=$tk -yscales=id=bunchLength -factor=yMultiplier=$yMtpl \
+        -yLabel="\$gs\$r\$bt\$n \($tUnit\)" $rootname.sig \
+        -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
+        -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
+        -device=$outputDevice
+    exit 0
+fi
+
+echo "Error: Wrong plot type!"
+exit 1

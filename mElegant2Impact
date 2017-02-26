@@ -1,0 +1,62 @@
+#!/bin/bash
+#\
+
+#
+# mElegant2Impact
+# Convert ELEGANT particle file (at a given location) to IMPACT format (at a given time).
+# - The centroid of the bunch can be set, and the default value is 0.
+# J. Zhu, DESY
+# 05/04/2015: created
+# 05/08/2015: The output file will be partcl.data with a headline, which is the input file of IMPACT-T
+
+if [ $# -lt 1 ]; then
+        echo "Usage: mElegant2Impact <input> <zShift>(optional)"
+        exit 1
+fi
+
+input=$1
+output=partcl.data
+zShift=$2
+
+if [ $(echo "$(echo "$zShift" | awk '{printf "%.15f",$1}') != 0" | bc) -eq 0 ]; then
+    zShift=0;
+	echo -e "\nWarning: zShift is 0!"
+fi
+
+if [ ! -f $input ]; then echo "Not found: $input"; exit 1; fi
+
+if [ -f $output ]; then echo "In use: $output"; exit 1; fi
+
+# data structure in IMPACT
+# x (m)   px (/mc)   y (m)   py (/mc)   z (m)   pz (/mc)
+# ......
+
+# mev=1e-6*mc^2/qe~0.5109991
+# betaz=pz/sqrt(pz^2+1), in RPN it is "pz = sqr 1 + sqrt /"
+# the bunch head is at t<0 and z>0, therefore t is defined as "t0-t"
+sddsconvert \
+    $input -pipe=out -retain=column,t,p,x,xp,y,yp \
+| sddsprocess \
+    -pipe -delete=parameter,* \
+    "-define=column,pz,p xp sqr yp sqr + 1 + sqrt /" \
+    "-define=column,px,pz xp *" \
+    "-define=column,py,pz yp *" \
+    "-process=*,ave,%s0" \
+    "-redefine=column,t,t0 t -,units=s" \
+    "-define=column,z,t c_mks * pz = sqr 1 + sqrt / *,units=m" \
+    "-redefine=col,x,x z xp * + ,units=m" \
+    "-redefine=col,y,y z yp * + ,units=m" \
+    "-redefine=column,z,z $zShift +,units=m" \
+| sdds2plaindata \
+    -pipe=in $output \
+    -outputMode=ascii -separator=' '\
+    -column=x,format=%21.12e \
+    -column=px,format=%21.12e \
+    -column=y,format=%21.12e \
+    -column=py,format=%21.12e \
+    -column=z,format=%21.12e \
+    -column=pz,format=%21.12e \
+
+echo "------------------------------------------------------------------------"
+echo "Particle file converted: ELEGANT --> IMPACT "
+echo "------------------------------------------------------------------------"

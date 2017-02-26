@@ -1,0 +1,78 @@
+#!/bin/bash
+#\
+
+# mBunchTrainSplit
+# - Convert a particle file of a bunch train to a sdds file with several pages
+# The order of the page number for each bunch is reversed, i.e. the last bunch is in the first page
+# The timing of the centroid of the last bunch (which will become the first one) is set to be zero 
+# Jun Zhu, last modified 23/06/2015
+# 30/06/2015, now the script split the charges into individual bunches.
+# 02/07/2015, also output files for the witness bunch
+
+if [ $# -lt 1 ]; then
+	echo "Usage mBunchTrainSplit <Input> <timeInterval>[optional]" && exit 1
+fi
+
+input=$1
+output=${input%.*}_train.sdds
+witnessBunch=${input%.*}_wit.sdds
+
+if [ ! -f $input ]; then
+    echo "Not found: $input"
+    exit 1
+fi
+
+if [ -f $output ]; then
+    echo "In use: $output"
+    exit 1
+fi
+
+if [ ! $3 ];then
+	timeInterval=0.1e-12
+else
+	timeInterval=$3
+fi
+
+totalParticles=`echo $(sdds2stream $input -rows=bare) | awk '{printf "%i",$totalParticles}'`
+
+sddssort $input -pipe=out -column=t \
+| sddsbreak -pipe -gapin=t,amount=$timeInterval \
+| sddsprocess -pipe=in tmp.sdds -delete=par,tave -process=t,ave,tave
+
+nBunches=`echo $(sdds2stream tmp.sdds -npages=bare) | awk '{printf "%i",$nBunches}'`
+
+### re-order the page number of each bunch
+### This is because in ELEGANT, the first bunch is the fiducial bunch. So if one wants to fiducial
+### the witness bunch in the tail of the bunch train, one must put the witness bunch to the head!
+
+sddssplit tmp.sdds
+if [ $nBunches -eq 2 ]; then
+	sddscombine tmp002.sdds tmp001.sdds tmpN.sdds
+elif [ $nBunches -eq 3 ]; then
+	sddscombine tmp003.sdds tmp002.sdds tmp001.sdds tmpN.sdds
+elif [ $nBunches -eq 4 ]; then
+	sddscombine tmp004.sdds tmp003.sdds tmp002.sdds tmp001.sdds tmpN.sdds
+elif [ $nBunches -eq 5 ]; then
+	sddscombine tmp005.sdds tmp004.sdds tmp003.sdds tmp002.sdds tmp001.sdds tmpN.sdds
+else
+	echo "Error: bunch number must between 2-5!"
+	exit 1
+fi
+
+### Shift the timing of the whole bunch, the centroid of the first bunch is at t=0
+tave0=`sdds2stream tmpN.sdds -par=tave -page=1`
+sddsprocess tmpN.sdds $output \
+-redefine=col,t,"t $tave0 -" -redefine=par,tave,"tave $tave0 -" \
+-redefine=par,Charge,"Charge n_rows * $totalParticles /"
+
+### Create another file for the witness bunch
+sddsprocess tmp00${nBunches}.sdds $witnessBunch \
+-redefine=col,t,"t $tave0 -" -redefine=par,tave,"tave $tave0 -" \
+-redefine=par,Charge,"Charge n_rows * $totalParticles /"
+
+# sddsplot $output -column=t,p -graphic=dot -factor=xMultiplier=1e12 -xLabel="t (ps)",thickness=2 \
+# -yLabel=thickness=2 -title= -topline= -tickSettings=thickness=2,labelThickness=2
+
+# msddsplot $output e
+
+rm tmp*.sdds

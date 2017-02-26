@@ -1,0 +1,95 @@
+#!/bin/bash
+#\
+
+#
+# mElegant2CSRTrack
+# Convert ELEGANT particle file (at a given location) to CSRTrack format (fmt1, at a given time).
+# - The transverse coordinates (x,y,px,py) and the clock t of the reference particle are all set to zero.
+# - The longitudinal coordinate z (centroid of the bunch) of the reference particle can be set, and the default value is 0.
+# J. Zhu, DESY
+# 05/03/2015: created
+# 11/03/2015: Change x of the reference particle to the average of the x particle in ELEGANT files
+
+if [ $# -lt 2 ]; then
+        echo "Usage: mElegant2CSRTrack <input> <output> <zShift>(optional)"
+        exit 1
+fi
+
+input=$1
+output=$2
+zShift=$3
+
+if [ $(echo "$(echo "$zShift" | awk '{printf "%.15f",$1}') != 0" | bc) -eq 0 ]; then
+    zShift=0;
+fi
+if [ ! -f $input ]; then
+    echo "Not found: $input"
+    exit 1
+fi
+if [ -f $output ]; then
+    echo "In use: $output"
+    exit 1
+fi
+
+tmpRoot=tmp
+
+# mev=1e-6*mc^2/qe~0.5109991
+sddsconvert $input -pipe=out -retain=column,t,p,x,xp,y,yp \
+    | sddsprocess -pipe=in $tmpRoot.1 \
+    "-define=column,pz,p xp sqr yp sqr + 1 + sqrt / mev * 1e6 *,units=eV" \
+    "-define=column,px,pz xp *,units=eV" \
+    "-define=column,py,pz yp *,units=eV" \
+
+# data structure in .fmt1, the unit of t is "1 meter/c_mks"
+# t   0   0   0   0   0   0
+# z   x   y   pz  px  py  Q
+# dz  dx  dy  dpz dpx dpy Q
+# ......
+# Note: in CSRTrack (x,y,z) corresponding to (z,x,y) in conventional coordinate system, where y is the bending plane in CSRTrack
+
+# Process to find the average coordinates, then get the relative coordinates.
+# betaz=pz/sqrt(pz^2+1), in RPN it is "pz = sqr 1 + sqrt /"
+# the bunch head is at t<0 and z>0, therefore t is defined as "t0-t"
+sddsprocess $tmpRoot.1 -pipe=out -delete=parameter,* \
+    -process=*,ave,%s0 \
+    "-redefine=column,t,t0 t -,units=s" \
+    "-define=column,z,t c_mks * pz = sqr 1 + sqrt / *,units=m" \
+    "-redefine=column,pz,pz pz0 -,units=eV" \
+    "-redefine=col,x,x z xp * + x0 -,units=m" \
+    "-redefine=col,y,y z yp * +,units=m" \
+    | sddsprocess -pipe=in $tmpRoot.2 "-delete=col,p,xp,yp,t"
+
+# Create row for the reference particle
+sddsprocess $tmpRoot.1 -pipe=out -process=pz,ave,%s -process=t,ave,%s \
+    | sddscollapse -pipe \
+	| sddsxref -pipe $tmpRoot.2 -transfer=par,x0 \
+    | sddsprocess -pipe=in $tmpRoot.3 -process=Charge,first,Charge \
+    "-redefine=column,px,0,units=eV" \
+    "-redefine=column,py,0,units=eV" \
+    "-redefine=column,x,x0,units=m" \
+    "-redefine=column,y,0,units=m" \
+    "-redefine=column,z,$zShift,units=m"
+
+# Create row for the first line where the first column it the reference timing 'tRef'
+sddsprocess $tmpRoot.3 $tmpRoot.4 "-redefine=col,z,0" "-redefine=col,pz,0"
+
+# Combine the reference data and the particle-by-particle offset data
+	sddscombine $tmpRoot.4 $tmpRoot.3 $tmpRoot.2 -merge -pipe=out \
+    -retain=column,x,y,z,px,py,pz \
+  | sddsprocess -pipe \
+    "-redefine=column,q,Charge n_rows /,units=C" \
+  | sdds2plaindata -pipe=in $output \
+    -outputMode=ascii -noRowCount -separator=' '\
+    -column=z,format=%22.14e \
+    -column=x,format=%22.14e \
+    -column=y,format=%22.14e \
+    -column=pz,format=%22.14e \
+    -column=px,format=%22.14e \
+    -column=py,format=%22.14e \
+    -column=q,format=%22.14e \
+
+\rm $tmpRoot.1 $tmpRoot.2 $tmpRoot.3 $tmpRoot.4
+
+echo "------------------------------------------------------------------------"
+echo "Particle file converted: ELEGANT --> CSRTrack "
+echo "------------------------------------------------------------------------"

@@ -1,0 +1,68 @@
+#!/bin/bash
+#\
+
+# mImpact2Elegant
+# Convert IMPACT particle file (at a given time) to elegant format (at a given location)
+# - The timing of the bunch centroid is set to 0
+# J. Zhu, DESY
+# 05/04/2015: Created
+# 05/08/2015: If the IMPACT file is the input file partcl.data (with a headline), the headline will be cut
+# 05/15/2015: Delete redundant parmeters and columns
+# 10/31/2016: Changed the names of the temporary files
+
+if [ $# != 3 ]; then
+    echo "Usage: mImpact2Elegant <input> <output> <totalCharge>"
+    exit 1
+fi
+
+input=$1
+output=$2
+totalCharge=$3
+
+if [ $(echo "$(echo "$totalCharge" | awk '{printf "%.15f",$1}') != 0" | bc) \
+        -eq 0 ]; then
+    totalCharge=0;
+	echo "Warning: totalCharge is 0!"
+fi
+
+if [ ! -f $input ]; then echo "Not found: $input"; exit 1; fi
+
+if [ -f $output ]; then echo "In use: $output"; exit 1; fi
+
+if [ $input == "partcl.data" ]; then
+	plaindata2sdds $input $input.10310810 -skiplines=1 \
+		-inputMode=ascii -outputMode=binary -noRowCount \
+		-column=x,double,units=m -column=px,double \
+		-column=y,double,units=m -column=py,double \
+		-column=z,double,units=m -column=pz,double
+else
+	plaindata2sdds $input $input.10310810 \
+		-inputMode=ascii -outputMode=binary -noRowCount \
+		-column=x,double,units=m -column=px,double \
+		-column=y,double,units=m -column=py,double \
+		-column=z,double,units=m -column=pz,double
+fi
+
+# betaz=pz/sqrt(pz^2+1), in RPN it is "pz = sqr 1 + sqrt /"
+# the bunch head is at t<0 and z>0, therefore t is defined as "-dz/(betaz*c)"
+sddsprocess \
+    ${input}.10310810 -pipe=out \
+	"-define=par,Charge,$totalCharge,units=C" \
+	"-process=z,average,zAve" \
+    "-redefine=col,z,z zAve -" \
+	"-define=column,p,px sqr py sqr + pz sqr + sqrt" \
+	"-define=column,xp,px pz /" \
+	"-define=column,yp,py pz /" \
+	"-redefine=column,x,x xp z * -,units=m" \
+	"-redefine=column,y,y yp z * -,units=m" \
+	"-define=column,t,z -1 * pz = sqr 1 + sqrt / c_mks * /,units=s" \
+| sddsprocess \
+    -pipe=in $output \
+	"-delete=col,px,py,pz,z" \
+	"-delete=par,zAve"
+
+rm ${input}.10310810
+
+echo "------------------------------------------------------------------------"
+echo "Particle file converted: IMPACT --> ELEGANT "
+echo "------------------------------------------------------------------------"

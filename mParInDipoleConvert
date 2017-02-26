@@ -1,0 +1,43 @@
+#!/bin/bash
+#\
+# This script is used to convert the particle file output in a bend by CSRTrack to standard coordinate system
+# Last modified on 01/28/2016 by Jun
+
+if [ $# -lt 3 ]; then
+	echo "usage: ./mParInDipoleConvert.sh <zRef> <lEff> <radius>"
+	echo "	zRef - z coordinate at the entrace of the dipole"
+	echo "	lEff - effective magnetic length of dipole"
+	echo "	rho - bending radius"
+	exit 1
+fi
+
+zRef=$1
+lEff=$2
+rho=$3
+
+rootName=x_dipole4
+i=1
+rm inDipole4.txt 2>/dev/null
+rm $rootName'_'????.sdds 2>/dev/null
+i=0
+while [ 1 ]; do
+	let i=i+1
+	j=`printf "%04d" $i`
+	input=$rootName'_'$j.fmt1
+	output=$rootName'_'$j.sdds
+	if [ ! -f $input ]; then
+		break
+	fi
+	# angle=$(awk NR==$i'{printf "%f",$1}' )
+	z=$(awk NR==2'{printf "%f",$1}' $input)
+	dz=`echo $z $zRef | awk '{printf "%e", $1-$2}'`
+	angle=`echo $dz $rho $lEff | awk '{printf "%e", atan2(($3-$1)/$2,sqrt(1-(($3-$1)/$2)^2))}'`
+	echo $angle
+	mCSRTrack2Elegant $input $output $angle
+	sddsanalyzebeam $output tmp.analysis
+	E=`echo $(sdds2stream tmp.analysis -column=pAverage) | awk '{printf "%e",sqrt($1^2+1)*0.510998910}'`
+	enx=`echo $(sdds2stream tmp.analysis -column=enx) | awk '{printf "%e",$1}'`
+    St=`echo $(sdds2stream tmp.analysis -column=St) | awk '{printf "%e",$1}'`
+	echo $dz $E $enx $St >>inDipole4.txt
+	rm tmp.analysis
+done

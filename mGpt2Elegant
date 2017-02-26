@@ -1,0 +1,52 @@
+#!/bin/bash
+#\
+
+# mGPT2Elegant
+# Convert GPT particle file (at a given time) to elegant format (at a given location)
+# - The timing of the bunch centroid is set to 0
+# J. Zhu, DESY
+# 04/05/2015: Created
+
+if [ $# != 3 ]; then
+    echo "Usage: mGPT2Elegant <input> <output> <totalCharge>"
+    exit 1
+fi
+
+input=$1
+output=$2
+totalCharge=$3
+
+if [ $(echo "$(echo "$totalCharge" | awk '{printf "%.15f",$1}') != 0" | bc) -eq 0 ]; then
+    totalCharge=0;
+fi
+if [ ! -f $input ]; then
+    echo "Not found: $input"
+    exit 1
+fi
+if [ -f $output ]; then
+    echo "In use: $output"
+    exit 1
+fi
+
+plaindata2sdds $input -pipe=out -noRowCount -inputMode=ascii -outputMode=binary \
+	-column=x,double,unit=m \
+	-column=y,double,unit=m \
+	-column=betax,double \
+	-column=betay,double \
+	-column=betaz,double \
+	-column=gamma,double \
+	-column=t,double,unit=s \
+	-column=particleID,double \
+	| sddsprocess -pipe \
+    "-define=par,Charge,$totalCharge,units=C" \
+	"-define=column,xp,betax betaz /" \
+	"-define=column,yp,betay betaz /" \
+	"-define=column,p,gamma sqr 1 - sqrt" \
+	"-process=t,ave,tAve" \
+	"-define=column,t,tAve t -,units=s" \
+	| sddsprocess -pipe=in $output \
+	"-delete=column,gamma,betax,betay,betaz,particleID"
+
+echo "------------------------------------------------------------------------"
+echo "Particle file converted: GPT --> ELEGANT "
+echo "------------------------------------------------------------------------"

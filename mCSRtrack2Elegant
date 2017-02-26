@@ -1,0 +1,73 @@
+#!/bin/bash
+#\
+#
+# mCSRTrack2Elegant
+# Convert CSRTrack particle file (fmt1, at a given time) to ELEGANT format (at a given location)
+# - The timings of particles in CSRTrack file are preserved
+# J. Zhu, DESY
+# 05/03/2015: Created
+# 11/03/2015: Add a feature to convert from CSRTrack's coordiante system to ELEGANT's
+
+if [ $# -lt 2 ]; then
+        echo "Usage: mCSRTrack2Elegant <input> <output> <Angle>"
+        exit 1
+fi
+
+input=$1
+output=$2
+theta=$3
+
+if [ ! $theta ];then
+	theta=0
+fi
+
+if [ ! -f $input ]; then
+    echo "Not found: $input"
+    exit 1
+fi
+if [ -f $output ]; then
+    echo "In use: $output"
+    exit 1
+fi
+
+# data structure in .fmt1
+# t   0   0   0   0   0   0
+# z   x   y   pz  px  py  Q
+# dz  dx  dy  dpz dpx dpy Q
+# ......
+# Note: in CSRTrack (x,y,z) corresponding to (z,x,y) in conventional coordinate system, where y is the bending plane in CSRTrack
+# Note: the unit of t is "1 meter/c_mks"
+# mev=1e-6*mc^2/qe~0.5109991
+# The reference particle is clipped
+# betaz=pz/sqrt(pz^2+1), in RPN it is "pz = sqr 1 + sqrt /"
+# The bunch head is at t<0 and z>0, therefore t is defined as "tRef-z/(betaz*c)", where tRef is the timing of the reference particle
+
+tRef=$(awk 'NR==1{printf "%e",$1}' $input)
+plaindata2sdds $input -pipe=out \
+    -inputMode=ascii -outputMode=binary -noRowCount -skiplines=1 \
+    -column=z,double,units=m -column=x,double,units=m -column=y,double,units=m \
+    -column=pz,double,units=eV/c -column=px,double,units=eV/c -column=py,double,units=eV/c \
+    -column=q,double,units=C \
+  | sddsprocess -pipe -process=*,first,%sRef -clip=1,0 \
+  "-redefine=col,x,x xRef + ,units=eV/c" \
+  "-redefine=col,y,y yRef +,units=eV/c" \
+  "-redefine=col,px,px pxRef +,units=eV/c" \
+  "-redefine=col,py,py pyRef +,units=eV/c" \
+  "-redefine=col,pz,pz pzRef +,units=eV/c" \
+  "-define=col,p,px sqr py sqr + pz sqr + sqrt mev / 1e6 /" \
+  "-redefine=col,x,z $theta sin * x $theta cos * +" \
+  "-redefine=col,px,pz $theta sin * px $theta cos * +" \
+  "-redefine=col,z,z $theta cos * x $theta sin * -" \
+  "-redefine=col,pz,pz $theta cos * px $theta sin * -" \
+  "-define=col,xp,px pz /" \
+  "-define=col,yp,py pz /" \
+  "-redefine=col,x,x xp z * -,units=m" \
+  "-redefine=col,y,y yp z * -,units=m" \
+  "-define=col,t,$tRef c_mks / z pz = sqr 1 + sqrt / c_mks * / -,units=s" \
+  "-process=q,sum,Charge" "-redefine=par,Charge,Charge n_rows / n_rows 1 + *" \
+  | sddsprocess -pipe=in $output \
+  -delete=col,q,px,py,z,dpz,pz -delete=par,*Ref
+
+echo "------------------------------------------------------------------------"
+echo "Particle file converted: CSTTrack --> ELEGANT "
+echo "------------------------------------------------------------------------"

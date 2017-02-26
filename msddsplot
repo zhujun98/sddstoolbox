@@ -1,0 +1,363 @@
+#!/bin/bash
+#\
+
+# msddsplot:
+# Plot the different phasespaces with IMPACT-T, ASTRA, ELEGANT, CSRTrack and 
+# GPT files
+#
+# Created by Jun Zhu
+#
+# Last modified on 10/30/2016
+#
+
+show_usage()
+{
+    echo -e "\nUsage: msddsplot <filename> <filetype> -<short option> --<long option> <value>"
+    echo -e "\nfiletype: i (IMPACT-T/Z), a (ASTRA), e (ELEGANT), c (CSRTrack), g (GPT)"
+    echo -e "\n-l, -s, -t: plottype, l (longitudinal PS), t (transverse PS), s (beam shape)"
+    echo -e "\n-p: output png file, otherwise plot on screen"
+    echo -e "\n--charge: bunch charge (C)"
+    echo -e "\n--xMin, --xMax, --yMin, --yMax: ranges of the plot"
+    echo -e "\n--slicePercent: percentage of particles in the slice"
+    echo -e "\n--zbins: bins used in coordinate z (t)"
+    echo -e "\n--plotSlice: 1 for plot the central slice of the bunch"
+    echo -e "\n--dotSize: size of the dot (integer, default 0)"
+    echo -e "\n--color: color of the plot"
+    exit 1
+}
+
+if [ $# -lt 2 ]; then show_usage; exit 1; fi
+
+c1=0.0  # color index used in sddscontour, must between 0 and 1.
+c2=0.75
+
+tk=3 # thickness
+
+filename=$1
+filetype=$2
+plottype=
+plotstyle=
+charge=
+tUnit=ps
+IUnit=kA
+xMin=0.0
+xMax=0.0
+yMin=0.0
+yMax=0.0
+slicePercent=0.1
+zBins=256
+plotSlice=0
+dotSize=0 # size of dot
+color=blue
+
+TEMP=`getopt -o lts -l charge:,tUnit:,IUnit:,xMin:,xMax:,yMin:,yMax:,slicePercent:,zBins:,dotSize:,color:,png,plotSlice -- "${@:3}"`
+if [ $? -ne 0 ]; then exit 1; fi
+
+eval set -- "$TEMP"
+
+while true; do
+    case "$1" in
+        -l) plottype=l; shift;;
+        -s) plottype=s; shift;;
+        -t) plottype=t; shift;;
+        --charge) charge=$2; shift 2;;
+        --tUnit) tUnit=$2; shift 2;;
+        --IUnit) IUnit=$2; shift 2;;
+        --xMin) xMin=$2; shift 2;;
+        --xMax) xMax=$2; shift 2;;
+        --yMin) yMin=$2; shift 2;;
+        --yMax) yMax=$2; shift 2;;
+        --slicePercent) slicePercent=$2; shift 2;;
+        --zBins) zBins=$2; shift 2;;
+        --dotSize) dotSize=$2; shift 2;;
+        --color) color=$2; shift 2;;
+        --png) plotstyle=png; shift;;
+        --plotSlice) plotSlice=1; shift;;
+        --) break;;
+        *) echo -e "\nError: Unknow argument $1!"; exit 1;;
+    esac
+done
+
+if [ $(echo "$(echo "$charge" | awk '{printf "%.15f",$1}') != 0" | bc) -eq 0 ]; then
+    if [ $filetype == "i" ] || [ $filetype == "g" ]; then
+        charge=1e-12
+        echo -e "\nWarning: set charge to 1 pC"
+    fi
+fi
+
+if [ ! -f $filename ]; then echo -e "Not found: $filename"; exit 1; fi
+
+rootname=phasespace
+rm $rootname 2>/dev/null
+
+if [ $filetype == "i" ]; then     # IMPACT-T file
+    mImpact2Elegant $filename $rootname $charge
+elif [ $filetype == "a" ]; then   # ASTRA file
+    mAstra2Elegant $filename $rootname
+elif [ $filetype == "c" ]; then   # CSRTrack .fmt1 file
+    mCSRtrack2Elegant $filename $rootname
+elif [ $filetype == "g" ]; then   # GPT file
+    mGpt2Elegant $filename $rootname $charge
+elif [ $filetype == "e" ]; then   # ELEGANT file
+    sdds2stream $filename -par=Charge >/dev/null
+    if [ $? -ne 0 ]; then
+        charge=1e-12
+        echo -e "\nWarning: not found charge in sdds file: set to 1 pC"
+        sddsprocess $filename $rootname -define=par,Charge,$charge
+    else
+        if [ $charge ]; then
+            echo -e "\nWarning: chage is included in the file. Input charge value is ignored!"
+        fi
+        cp $filename $rootname
+    fi
+fi
+
+if [ ! -f $rootname ]; then echo -e "\nWrong particle file!"; exit 1; fi
+
+if [ $tUnit == 'ps' ]; then
+    tScale=1e12
+elif [ $tUnit == 'fs' ]; then
+    tScale=1e15
+else
+    echo -e "\nUnknown t unit!"; exit 1
+fi
+
+if [ $IUnit == 'kA' ]; then
+    IScale=1e-3
+elif [ $IUnit == 'A' ]; then
+    IScale=1.0
+else
+    echo -e "\nUnknown current unit!"; exit 1
+fi
+
+if [ $color == 'purple' ]; then
+    color=14
+elif [ $color == 'blue' ] || [ $color == 'b' ]; then
+    color=10
+elif [ $color == 'pink' ] || [ $color == 'p' ]; then
+    color=9
+elif [ $color == 'yellow' ] || [ $color == 'y' ]; then
+    color=8
+elif [ $color == 'cyan' ] || [ $color == 'c' ]; then
+    color=5
+elif [ $color == 'green' ] || [ $color == 'g' ]; then
+    color=3
+elif [ $color == 'red' ] || [ $color == 'r' ]; then
+    color=1
+elif [ $color == 'black' ] || [ $color == 'k' ]; then
+    color=0
+else
+    echo -e "\nUnknow color!"; exit 1
+fi
+
+set_output_device() {
+    if [ $# -lt 1 ]; then
+        echo -e "\nUsage: set_output_device filename"
+    else
+        filename=$1
+    fi
+    
+    rm ${filename}.png 2>/dev/null
+
+    if [ ! $plotstyle ]; then 
+        outputDevice=motif
+    else
+        outputDevice="lpng -output=${filename}.png"
+    fi
+}
+
+### Current profile plotting
+current_profile_plot() {
+    np=`echo $(sdds2stream $rootname -rows=bare)`
+    
+    sddsprocess \
+        $rootname -pipe=out -process=t,ave,tAve -redefine=col,t,"t tAve -" \
+    | sddshist \
+        -pipe -datacolumn=t -bins=$zBins \
+    | sddsprocess -pipe=in ${rootname}.hist \
+        -define=col,I,"frequency $np / Charge * sddshistBinSize / $IScale *",units=$IUnit \
+        -redefine=col,t,"t $tScale *",units=$tUnit
+    
+    set_output_device current
+
+    sddsplot \
+        ${rootname}.hist -graphic=line,type=$color,thickness=$tk -thickness=$tk \
+        -col=t,I -scales=$xMin,$xMax,0,0 -device=$outputDevice -labelSize=0.03
+    
+    rm $rootname.hist
+}
+
+### longitudinal phasespace (dt-delta) plotting
+longitudinal_phasespace_plot() {
+    set_output_device t-p 
+   
+    sddsplot \
+        $rootname -graphic=dot,type=$color,subtype=$dotSize -thickness=$tk \
+        -col=t,p -factor=xMultiplier=$tScale \
+        -offset=xChange=$tAve,xInvert \
+        -xLabel="t \($tUnit\)" -yLabel="p \(mc\)" \
+        -labelsize=0.03 -title= -topline= \
+        -device=$outputDevice -scales=$xMin,$xMax,$yMin,$yMax
+}
+
+### transverse phasespace (x-xp and y-yp) plotting
+transverse_phasespace_plot() {
+    if [ $# -lt 3 ]; then
+        echo -e "\nUsage: transverse_phase_space_plot filename col1 col2\n"
+    else
+        local filename=$1
+        local col1=$2
+        local col2=$3
+    fi
+
+    set_output_device $filename
+    
+    sddsplot \
+        $rootname -graphic=dot,type=$color,subtype=$dotSize -thickness=$tk \
+        -col=$col1,$col2 -factor=xMultiplier=1e3,yMultiplier=1e3 \
+        -xLabel="$col1 \(mm\)" -yLabel="$col2 \(mrad\)" \
+        -labelsize=0.03 -title= -topline= -device=$outputDevice
+}
+
+### bunch shape plotting (t-x, t-y)
+bunch_shape_plot() {
+    if [ $# -lt 2 ]; then
+        echo -e "\nUsage: bunch_shape_plot filename col\n"
+    else
+        local filename=$1
+        local col=$2
+    fi
+    
+    set_output_device $filename
+    
+    sddsplot \
+        $rootname -graphic=dot,type=$color,subtype=$dotSize -thickness=$tk \
+        -col=t,$col -factor=xMultiplier=$tScale,yMultiplier=1e3 \
+        -offset=xChange=$tAve,xInvert \
+        -xLabel="t \($tUnit\)" -yLabel="$col \(mm\)" \
+        -labelsize=0.03 -title= -topline= -device=$outputDevice
+}
+
+
+### Analyze the whole beam.
+###
+### The particles are all drifted to the central plane of the bunch.
+### Therefore, the calculated emittance is local emittance.
+beam_analysis() {
+    ### The mechanical omenta is used by default.
+    sddsprocess $rootname -pipe=out \
+        -redefine=par,Particles,n_rows \
+    | sddsanalyzebeam \
+        -pipe \
+    | sddsprocess \
+        -pipe -define=col,chirp,"s56 s55 / 299792458 /",units="1/m" \
+    | sddsprocess \
+        -pipe=in $rootname.analyzeM 
+
+    if [ $? -ne 0 ]; then 
+        echo -e "\nInternal error for sddsanalyzebeam!"; exit 1
+    fi
+
+    echo -e "\nAnalysis in trace-space (local trace-space emittance):\n"
+    sddsprintout $rootname.analyzeM \
+        -col=pAverage -col=St -col=Sdelta -col=chirp -col=Particles -notitle
+
+    sddsprintout \
+        $rootname.analyzeM -col=en? -col=Sx -col=Sy -col=Charge -notitle
+     
+    sddsprintout $rootname.analyzeM \
+        -col=beta? -col=alpha? -notitle 
+        
+    sddsprintout $rootname.analyzeM \
+        -col=Cx -col=Cxp -col=Cy -col=Cyp -col=Ct -notitle 
+
+    ### The canonical momenta is used:
+    ### qx=px/p0=x'(1+delta)/sqrt(1+x'^2+y'^2) 
+    ### The particles are drifted back to their original locations !!!
+    sddsprocess \
+        $rootname -pipe=out -process=t,ave,tAve -redefine=col,t,"t tAve -" \
+        -define=col,pz,"p xp sqr yp sqr + 1 + sqrt / mev * 1e6 *",units=eV \
+        -define=col,z,"t c_mks * pz = sqr 1 + sqrt / *",units=m \
+        -redefine=col,x,"x z xp * +" -redefine=col,y,"y z yp * +" \
+    | sddsanalyzebeam \
+        -pipe=in $rootname.analyzeC -canonical
+    
+    echo -e "\nCanonical emittance (enx, eny):\n"
+    sddsprintout $rootname.analyzeC -col=enx -col=eny -notitle
+   
+    ### Slice emittance, energy spread and uncorrelated energy spread 
+    nrows_total=`echo $(sdds2stream $rootname -rows=bare)`
+    nrows=`echo $slicePercent $nrows_total | awk '{printf "%d", $1*$2}'`
+    
+    sddsprocess \
+        $rootname -pipe=out -process=t,ave,tAve \
+        -redefine=col,t,"t tAve -" \
+        -define=col,abs_t,"t abs" \
+    | sddssort \
+        -pipe -col=abs_t,increasing \
+    | sddsprocess \
+        -pipe=in ${rootname}.slice -clip=$nrows,0,invert \
+        -redefine=par,Charge,"Charge $nrows * $nrows_total /" \
+        -del=col,abs_t -del=par,tAve
+
+    Sdelta_u=`echo "$(sddsprocess \
+        ${rootname}.slice -pipe=out -def=col,gamma,"p sqr 1 + sqrt" \
+        -process=gamma,ave,gammaAve \
+        "-process=t,correlation,cor_gammat,functionof=gamma" \
+        -process=t,standarddeviation,St \
+        -process=gamma,standarddeviation,Sgamma \
+        -define=par,slope,"cor_gammat Sgamma * St /" \
+        -define=par,Sdelta_u,"Sgamma sqr slope sqr St sqr * - sqrt gammaAve /" \
+        | sdds2stream \
+        -pipe=in -par=Sdelta_u)"`
+    
+    sddsprocess \
+        ${rootname}.slice -pipe=out \
+        -define=col,pz,"p xp sqr yp sqr + 1 + sqrt / mev * 1e6 *",units=eV \
+        -define=col,z,"t c_mks * pz = sqr 1 + sqrt / *",units=m \
+        -redefine=col,x,"x z xp * +" -redefine=col,y,"y z yp * +" \
+        -define=par,Sdelta_u,$Sdelta_u \
+    | sddsanalyzebeam \
+        -pipe=in ${rootname}.slice.analyzeC -canonical
+    
+    echo -e "\nSlice properties (${slicePercent}):\n"
+
+    sddsprintout \
+        ${rootname}.slice.analyzeC \
+        -col=enx -col=eny -col=Sdelta -col=Sdelta_u -col=St -notitle
+    
+    if [ $plotSlice -eq 1 ]; then
+        cp ${rootname}.slice $rootname
+        tAve=`echo $(sdds2stream $rootname.analyzeC -col=Ct) | awk '{printf "%e", $1}'`
+    else
+        # tAve is used in the plot to shift the longitudinal coordinate
+        tAve=`echo $(sdds2stream $rootname.analyzeM -col=Ct) | awk '{printf "%e", $1}'`
+    fi
+
+    echo -e "\n"
+}
+
+
+### ---------------------------------------------------------------------------
+### Main 
+### ---------------------------------------------------------------------------
+beam_analysis
+
+if [ ! $plottype ]; then
+    :
+elif [ $plottype == "l" ]; then
+    current_profile_plot
+    longitudinal_phasespace_plot
+elif [ $plottype == "t" ]; then
+    transverse_phasespace_plot x-xp x xp
+    transverse_phasespace_plot y-yp y yp
+elif [ $plottype == "s" ]; then
+    bunch_shape_plot t-x x
+    bunch_shape_plot t-y y
+else
+    echo -e "\nUnknown plottype!"    
+fi
+
+rm $rootname ${rootname}.analyze? ${rootname}.slice ${rootname}.slice.analyze?
+
+

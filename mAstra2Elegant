@@ -1,0 +1,103 @@
+#!/bin/bash
+#\
+
+#
+# mAstra2Elegant:
+# Convert ASTRA particle file (at a given time) to elegant format (at a given location)
+# - The timings of particles in ASTRA file are preserved
+# - There is a program astra2elegant.exe included in ELEGANT which has the almost the similar function
+# M. Borland, ANL/APS
+# 7/28/2009: corrected two problems (M. Borland)
+# 1. Was using p instead of pz to compute time from z position.
+# 2. Wasn't transforming x and y to account for drift to zReference.
+#
+# J. Zhu, DESY
+# 03/05/2015: 
+# 1. Change to bash shell; 
+# 2. Make it working
+# 05/05/2015: Fixed one problem
+# 1. The sign of charge in ASTRA is negative for electrons
+# 09/16/2016:
+# 1. The reference particle will not be discarded.
+# 10/31/2016:
+# Changed the names of the temporary files
+
+if [ $# != 2 ]; then
+    echo "Usage: mAstra2Elegant <input> <output>"
+    exit 1
+fi
+
+input=$1
+output=$2
+
+if [ ! -f $input ]; then
+    echo "Not found: $input"
+    exit 1
+fi
+if [ -f $output ]; then
+    echo "In use: $output"
+    exit 1
+fi
+
+# data structure in ASTRA
+# x   y   z   px  py  pz  clock charge particleIndex statusFlag
+# x   y   dz  px  py dpz  clock charge particleIndex statusFlag
+# ......
+# particleIndex
+# 1: electron
+# statusFlag
+# 3: trajector probe particle
+# 5: standard particle
+#
+# mev=1e-6*mc^2/qe~0.5109991
+# betaz=pz/sqrt(pz^2+1), in RPN it is "pz = sqr 1 + sqrt /"
+# The bunch head is at t<0 and z>0, therefore t is defined as "tRef-z/(betaz*c)", where tRef is the timing of the reference particle
+# Note: There is sign for charge in ASTRA particle files
+V_LIGHT=299792458
+M_E=9.10938356e-31
+Q_E=1.60217662e-19
+
+tRef=$(awk 'NR==1{printf "%e",$7}' $input)
+plaindata2sdds \
+    $input ${input}.10310805 -inputMode=ascii -outputMode=binary -noRowCount \
+    -column=x,double,units=m -column=y,double,units=m -column=z,double,units=m \
+    -column=px,double,units=eV/c -column=py,double,units=eV/c -column=pz,double,units=eV/c \
+    -column=t,double,units=ns -column=q,double,units=nC -column=particleType,short \
+    -column=status,short
+
+### The t informtion is more useful than the z information because the
+### former can be used for jitter study.
+sddsprocess \
+    ${input}.10310805 ${input}.ref.10310805 -clip=1,0,invert \
+    "-redefine=column,t,t 1e9 /,units=s" \
+    "-redefine=column,z,0.0,units=m"
+
+sddsprocess \
+    ${input}.10310805 ${input}.nonref.10310805 -process=*,first,%sRef -clip=1,0 \
+    "-redefine=column,pz,pz pzRef +,units=eV/c" \
+    "-redefine=column,t,$tRef 1e9 / z pz = sqr 1 + sqrt / c_mks * / - ,units=s"
+
+rm ${input}.10310805
+
+sddscombine \
+    -pipe=out ${input}.ref.10310805 ${input}.nonref.10310805 -merge \
+| sddsprocess \
+    -pipe \
+    "-define=column,p,px sqr py sqr + pz sqr + sqrt $M_E / $V_LIGHT sqr / $Q_E *" \
+    "-define=column,xp,px pz /" \
+    "-define=column,yp,py pz /" \
+    "-redefine=column,x,x xp z * -,units=m" \
+    "-redefine=column,y,y yp z * -,units=m" \
+    "-filter=column,particleType,0.5,1.5" \
+    "-filter=column,status,4.5,5.5,status,2.5,3.5,|" \
+    "-redefine=column,q,q 1e-9 * abs,units=C" \
+    "-process=q,sum,Charge" \
+| sddsprocess \
+    -pipe=in $output \
+    -delete=col,q,px,py,z,dpz,pz,particleType,status -delete=par,*Ref
+
+rm ${input}.ref.10310805 ${input}.nonref.10310805
+
+echo "------------------------------------------------------------------------"
+echo "Particle file converted: ASTRA --> ELEGANT "
+echo "------------------------------------------------------------------------"

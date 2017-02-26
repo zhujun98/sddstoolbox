@@ -1,0 +1,202 @@
+#!/bin/bash
+#\
+
+# This script is used to generate an arbitrary electron bunch
+
+# Created by Jun Zhu
+
+# Last modified on 10/30/2016
+
+
+show_usage()
+{
+    echo -e "\nUsage sddsbunch_generator filename -<short option> --<long option> <value>"
+    echo -e "\nValid options are:"
+    echo -e "\nfilename: output filename"
+    echo -e "\n--np: number of particles"
+    echo -e "\n--charge (C)"
+    echo -e "\n--betax (m), --betay (m), --alphax, --alphay, --enx (m), --eny (m)"
+    echo -e "\n--Cx (m), --Cxp (rad), --Cy (m), --Cyp (rad)"
+    echo -e "\n--energy (eV), --gamma, --pAve. Priority: energy > gamma > pAve"
+    echo -e "\n--Sdp, --chirp (1/m)"
+    echo -e "\n--Sz (meter), --St (s). Priority: St > Sz"
+    echo -e "\n--Ct (s): timing of the bunch"
+    echo -e "\n--xy_dist, --z_dist: particle distribution (default Gaussian)"
+    echo -e "\n--xy_cutoff, --z_cutoff: cutoff of distribution (default 3)\n"
+}
+
+if [ $# -lt 1 ]; then show_usage; exit 1; fi
+
+output=$1
+
+np=10000
+betax=10.0; alphax=0.0; betay=10.0; alphay=0.0
+enx=0.1e-6; eny=0.1e-6
+Cx=0.0; Cxp=0.0; Cy=0.0; Cyp=0.0
+charge=10.0e-12
+pAve=196.692592
+Sz=2.99792458e-6
+Ct=0.0
+Sdp=0.001
+chirp=0.0
+# possible distribution: gaussian, hard-edge, uniform-ellipse, shell
+xy_dist=gaussian
+z_dist=gaussian
+xy_cutoff=3
+z_cutoff=3
+
+TEMP=`getopt -o -h -l np:,alphax:,betax:,alphay:,betay:,enx:,eny:,Cx:,Cy:,Cxp:,Cyp:,charge:,energy:,gamma:,pAve:,St:,Sz:,Ct:,Sdp:,chirp:,xy_dist:,z_dist:,xy_cutoff:,z_cutoff: -- "${@:2}"`
+if [ $? -ne 0 ]; then exit 1; fi
+
+eval set -- "$TEMP"
+
+while true; do
+    case "$1" in
+        --np) np=$2; shift 2;;
+        --alphax) alphax=$2; shift 2;;
+        --betax) betax=$2; shift 2;;
+        --alphay) alphay=$2; shift 2;;
+        --betay) betay=$2; shift 2;;
+        --enx) enx=$2; shift 2;;
+        --eny) eny=$2; shift 2;;
+        --Cx) Cx=$2; shift 2;;
+        --Cxp) Cxp=$2; shift 2;;
+        --Cy) Cy=$2; shift 2;;
+        --Cyp) Cyp=$2; shift 2;;
+        --charge) charge=$2; shift 2;;
+        --energy) energy=$2; shift 2;;
+        --gamma) gamma=$2; shift 2;;
+        --pAve) pAve=$2; shift 2;;
+        --Sdp) Sdp=$2; shift 2;;
+        --St) St=$2; shift 2;;
+        --Sz) Sz=$2; shift 2;;
+        --Ct) Ct=$2; shift 2;;
+        --chirp) chirp=$2; shift 2;;
+        --xy_dist) xy_dist=$2; shift 2;;
+        --z_dist) z_dist=$2; shift 2;;
+        --xy_cutoff) xy_cutoff=$2; shift 2;;
+        --z_cutoff) z_cutff=$2; shift 2;;
+        --) break;;
+        *) echo -e "\nError: Unknow argument $1!"; exit 1;;
+    esac
+done
+
+if [ ! $output ]; then echo -e "Error: unknown output file!"; exit 1; fi
+if [ -f $output ]; then rm $output; fi
+
+np=$(echo "$np" | awk '{printf "%i",$1}')
+if [ $np -lt 100 ]; then
+    echo -e "\nError: Particle numbers too small!"; exit 1
+fi
+
+if [ `echo $betax | awk '{if($1>0) {print 1} else {printf 0}}'` == '0' ]; then
+    echo -e "\nError: non-positive betax!"; exit 1
+fi
+
+if [ `echo $betay | awk '{if($1>0) {print 1} else {printf 0}}'` == '0' ]; then
+    echo -e "\nError: non-positive betay!"; exit 1
+fi
+
+if [ `echo $enx | awk '{if($1>=0) {print 1} else {printf 0}}'` == '0' ]; then
+    echo -e "\nError: negative horizontal emittance!"; exit 1
+fi
+
+if [ `echo $eny | awk '{if($1>=0) {print 1} else {printf 0}}'` == '0' ]; then
+    echo -e "\nError: negative vertical emittance!"; exit 1
+fi
+
+if [ `echo $charge | awk '{if($1>0) {print 1} else {print 0}}'` == '0' ]; then
+    echo -e "\nError: None-positive charge!"; exit 1
+fi
+
+if [ $energy ]; then
+    E0=510998.910
+
+    if [ `echo $energy $E0 | awk '{if($1>$2) {print 1} else {print 0}}'` == '0' ]; then
+        echo -e "\nError: energy must be larger than 0.511 MeV!"; exit 1
+    fi
+
+    pAve=`echo $energy $E0 | awk '{printf "%e", sqrt($1^2/$2^2-1)}'`
+
+elif [ $gamma ]; then
+    if [ `echo $gamma | awk '{if($1>1.0) {print 1} else {print 0}}'` == '0' ]; then
+        echo -e "\nError: gamma must be larger than 1!"; exit 1
+    fi
+    pAve=`echo $gamma | awk '{printf "%e", sqrt($1^2-1)}'`
+
+elif [ $pAve ]; then
+    if [ `echo $pAve | awk '{if($1>0.0) {print 1} else {print 0}}'` == '0' ]; then
+        echo -e "\nError: non-positive pAve!"; exit 1
+    fi
+fi
+    
+if [ $St ]; then
+    if [ `echo $St | awk '{if($1>0) {print 1} else {print 0}}'` == '0' ]; then
+        echo -e "\nError: non-positive St!"; exit 1
+    fi
+    Sz=$(echo $St | awk '{printf "%e",$1*299792458}')
+else
+    if [ `echo $Sz | awk '{if($1>0) {print 1} else {print 0}}'` == '0' ]; then
+        echo -e "\nError: non-positive Sz!"; exit 1
+    fi
+fi
+
+if [ `echo $Sdp | awk '{if($1>=0) {print 1} else {print 0}}'` == 0 ]; then
+    echo -e "\nError: negative Sdp!"; exit 1
+fi
+
+rootname=bunchGenerator
+
+if [ -f $rootname.lte ]; then
+    echo -e "\nError: $rootname.lte already exists!" && exit 1
+fi
+
+### Generate lattice file for elegant
+echo "D1:    drift,L=0.01
+A:    line=(D1)" >$rootname.lte
+
+if [ -f $rootname.ele ]; then
+    echo "Error: $rootname.ele already exists!" && exit 1
+fi
+### Generate tracking file
+echo "&run_setup
+    lattice                 = $rootname.lte,
+    rootname                = $rootname,
+    use_beamline            = A,
+    default_order           = 1,
+    p_central               = $pAve,   
+    random_number_seed      = 0,
+&end
+&run_control
+    n_steps                   = 1,
+&end
+&bunched_beam
+    bunch = %s.bun,
+    n_particles_per_bunch = $np,
+    one_random_bunch=1,
+    
+    beta_x =  $betax, alpha_x = $alphax, emit_nx = $enx,
+    beta_y =  $betay, alpha_y = $alphay, emit_ny = $eny,
+    
+    Po = $pAve,
+    sigma_dp = $Sdp,
+    sigma_s = $Sz,
+    momentum_chirp = $chirp,
+    distribution_cutoff[0] = $xy_cutoff,$xy_cutoff,$xy_cutoff,
+    distribution_type[0] = \"$xy_dist\",\"$xy_dist\",\"$z_dist\",
+    enforce_rms_values[0] = 1,1,1,
+    centroid[0] = $Cx,$Cxp,$Cy,$Cyp,0.0,0.0,
+&end
+&track &end" >$rootname.ele
+
+elegant $rootname.ele >/dev/null
+
+rm $rootname.lte $rootname.ele
+
+sddsprocess \
+    $rootname.bun $output -redefine=par,Charge,$charge -redefine=col,t,"t $Ct +"
+
+rm $rootname.bun
+
+echo -e "\nBunch generated: $output!"
+

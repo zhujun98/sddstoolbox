@@ -18,7 +18,7 @@ show_usage()
     echo -e "\n--betax (m), --betay (m), --alphax, --alphay, --enx (m), --eny (m)"
     echo -e "\n--Cx (m), --Cxp (rad), --Cy (m), --Cyp (rad)"
     echo -e "\n--energy (eV), --gamma, --pAve. Priority: energy > gamma > pAve"
-    echo -e "\n--Sdp, --chirp (1/m)"
+    echo -e "\n--Sdelta (dp/p), --chirp (1/m)"
     echo -e "\n--Sz (meter), --St (s). Priority: St > Sz"
     echo -e "\n--Ct (s): timing of the bunch"
     echo -e "\n--xy_dist, --z_dist: particle distribution (default Gaussian)"
@@ -37,7 +37,7 @@ charge=10.0e-12
 pAve=196.692592
 Sz=2.99792458e-6
 Ct=0.0
-Sdp=0.001
+Sdelta=0.001
 chirp=0.0
 # possible distribution: gaussian, hard-edge, uniform-ellipse, shell
 xy_dist=gaussian
@@ -45,7 +45,7 @@ z_dist=gaussian
 xy_cutoff=3
 z_cutoff=3
 
-TEMP=`getopt -o -h -l np:,alphax:,betax:,alphay:,betay:,enx:,eny:,Cx:,Cy:,Cxp:,Cyp:,charge:,energy:,gamma:,pAve:,St:,Sz:,Ct:,Sdp:,chirp:,xy_dist:,z_dist:,xy_cutoff:,z_cutoff: -- "${@:2}"`
+TEMP=`getopt -o -h -l np:,alphax:,betax:,alphay:,betay:,enx:,eny:,Cx:,Cy:,Cxp:,Cyp:,charge:,energy:,gamma:,pAve:,St:,Sz:,Ct:,Sdelta:,chirp:,xy_dist:,z_dist:,xy_cutoff:,z_cutoff: -- "${@:2}"`
 if [ $? -ne 0 ]; then exit 1; fi
 
 eval set -- "$TEMP"
@@ -67,7 +67,7 @@ while true; do
         --energy) energy=$2; shift 2;;
         --gamma) gamma=$2; shift 2;;
         --pAve) pAve=$2; shift 2;;
-        --Sdp) Sdp=$2; shift 2;;
+        --Sdelta) Sdelta=$2; shift 2;;
         --St) St=$2; shift 2;;
         --Sz) Sz=$2; shift 2;;
         --Ct) Ct=$2; shift 2;;
@@ -141,8 +141,8 @@ else
     fi
 fi
 
-if [ `echo $Sdp | awk '{if($1>=0) {print 1} else {print 0}}'` == 0 ]; then
-    echo -e "\nError: negative Sdp!"; exit 1
+if [ `echo $Sdelta | awk '{if($1>=0) {print 1} else {print 0}}'` == 0 ]; then
+    echo -e "\nError: negative Sdelta!"; exit 1
 fi
 
 rootname=bunchGenerator
@@ -179,7 +179,7 @@ echo "&run_setup
     beta_y =  $betay, alpha_y = $alphay, emit_ny = $eny,
     
     Po = $pAve,
-    sigma_dp = $Sdp,
+    sigma_dp = $Sdelta,
     sigma_s = $Sz,
     momentum_chirp = $chirp,
     distribution_cutoff[0] = $xy_cutoff,$xy_cutoff,$xy_cutoff,

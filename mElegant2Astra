@@ -17,6 +17,11 @@
 # Add the option to set longitudinal centroid z
 # 05/05/2015: Fixed one problem
 # 1. The sign of charge in ASTRA is negative for electrons
+# 04/03/2017: 
+# The old betaz was calculaged by 
+#   betaz=pz/sqrt(pz^2+1), in RPN it is "pz = sqr 1 + sqrt /"
+# Now it is calculated by
+#   betay=pz/sqrt(px^2+py^2+pz^2+1)
 
 if [ $# -lt 2 ]; then
         echo "Usage: mElegant2Astra <input> <output> <zShift>(optional)"
@@ -62,12 +67,13 @@ sddsconvert \
 sddsprocess \
     $tmpRoot.1 -pipe=out -delete=parameter,* -process=*,ave,%s0 \
     "-redefine=column,t,t0 t -,units=s" \
-    "-define=column,z,t c_mks * pz = sqr 1 + sqrt / *,units=m" \
+    "-define=column,betaz,pz px sqr py sqr + pz sqr + 1 + sqrt /" \
+    "-define=column,z,t c_mks * betaz *,units=m" \
     "-redefine=column,pz,pz pz0 -,units=eV" \
     "-redefine=column,x,x z xp * +,units=m" \
     "-redefine=column,y,y z yp * +,units=m" \
 | sddsprocess \
-    -pipe=in $tmpRoot.2 "-delete=col,p,xp,yp"
+    -pipe=in $tmpRoot.2 "-delete=col,p,xp,yp,betaz"
 
 # Create a sdds file with only one row for the reference particle
 # First create a parameter 'pz', then use 'sddscollapse' to create a sdds file with one column of data 'pz'

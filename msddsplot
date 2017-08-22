@@ -2,12 +2,10 @@
 #\
 
 # msddsplot:
-# Plot the different phasespaces with IMPACT-T, ASTRA, ELEGANT, CSRTrack and 
-# GPT files
+# Analyze and plot the different phasespaces with IMPACT-T, ASTRA, 
+# ELEGANT, CSRTrack and GPT files.
 #
 # Created by Jun Zhu
-#
-# Last modified on 10/30/2016
 #
 
 show_usage()
@@ -18,7 +16,7 @@ show_usage()
     echo -e "\n-p: output png file, otherwise plot on screen"
     echo -e "\n--charge: bunch charge (C)"
     echo -e "\n--xMin, --xMax, --yMin, --yMax: ranges of the plot"
-    echo -e "\n--slicePercent: percentage of particles in the slice"
+    echo -e "\n--slicePercent: relative bunch length of the central slice (4-sigma for total)"
     echo -e "\n--zbins: bins used in coordinate z (t)"
     echo -e "\n--plotSlice: 1 for plot the central slice of the bunch"
     echo -e "\n--dotSize: size of the dot (integer, default 0)"
@@ -44,6 +42,8 @@ xMin=0.0
 xMax=0.0
 yMin=0.0
 yMax=0.0
+# full length of the central slice used to calculate the slice properties,
+# assuming a 4-sigma full bunch length
 slicePercent=0.1
 zBins=256
 plotSlice=0
@@ -77,6 +77,10 @@ while true; do
         *) echo -e "\nError: Unknow argument $1!"; exit 1;;
     esac
 done
+
+if [ $(echo "$slicePercent > 0" | bc) -eq 0 ]; then
+    echo -e "\nError: slicePercent <= 0"; exit 1
+fi
 
 if [ $(echo "$(echo "$charge" | awk '{printf "%.15f",$1}') != 0" | bc) -eq 0 ]; then
     if [ $filetype == "i" ] || [ $filetype == "g" ]; then
@@ -287,18 +291,19 @@ beam_analysis() {
    
     ### Slice emittance, energy spread and uncorrelated energy spread 
     nrows_total=`echo $(sdds2stream $rootname -rows=bare)`
-    nrows=`echo $slicePercent $nrows_total | awk '{printf "%d", $1*$2}'`
     
     sddsprocess \
         $rootname -pipe=out -process=t,ave,tAve \
         -redefine=col,t,"t tAve -" \
-        -define=col,abs_t,"t abs" \
-    | sddssort \
-        -pipe -col=abs_t,increasing \
+        -process=t,standarddeviation,St \
+        -define=par,t_lb,"St 4 * $slicePercent * 0.5 * -1.0 *" \
+        -define=par,t_ub,"St 4 * $slicePercent * 0.5 *" \
     | sddsprocess \
-        -pipe=in ${rootname}.slice -clip=$nrows,0,invert \
-        -redefine=par,Charge,"Charge $nrows * $nrows_total /" \
-        -del=col,abs_t -del=par,tAve
+        -pipe -filter=col,t,t_lb,t_ub \
+    | sddsprocess \
+        -pipe=in ${rootname}.slice \
+        -redefine=par,Charge,"Charge n_rows * $nrows_total /" \
+        -del=par,tAve -del=par,St -del=par,t_lb -del=par,t_ub
 
     Sdelta_u=`echo "$(sddsprocess \
         ${rootname}.slice -pipe=out -def=col,gamma,"p sqr 1 + sqrt" \

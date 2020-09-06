@@ -15,6 +15,7 @@ show_usage() {
     echo -e "\nplotname: twiss, eta, R??(T???), longitudinalDispersion, x, Sxy, betaBeam, enxy, St, psi"
     echo -e "\n--postscript: output ps script files, otherwise plot on screen"
     echo -e "\n--xMin, XMax, yMin, yMax: limit of the plot axis"
+    echo -e "\n--s0: start s position of the plot"
 }
 
 if [ $# -lt 2 ]; then show_usage; exit 1; fi
@@ -26,12 +27,13 @@ xMin=0.0
 xMax=0.0
 yMin=0.0
 yMax=0.0
+s0=0.0
 
 tk=2 # thickness
 pyfactor=0.15 # size of the profile plot
 pyoffset=0.4 # y offset of the profile plot
 
-TEMP=`getopt -o h -l postscript,xMin:,xMax:,yMin:,yMax: -- "${@:3}"`
+TEMP=`getopt -o h -l postscript,xMin:,xMax:,yMin:,yMax:,s0: -- "${@:3}"`
 if [ $? -ne 0 ]; then exit 1; fi
 
 eval set -- "$TEMP"
@@ -43,6 +45,7 @@ while true; do
         --xMax) xMax=$2; shift 2;;
         --yMin) yMin=$2; shift 2;;
         --yMax) yMax=$2; shift 2;;
+        --s0) s0=$2; shift 2;;
         --) break;;
         *) echo -e "\nError: Unknow argument $1!"; exit 1;;
     esac
@@ -61,7 +64,7 @@ if [ $plotname == "twiss" ]; then
         echo "Error: $rootname.twi or $rootname.mag not found!"; exit 1
     fi
     sddsplot \
-        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,betax -graphic=line,type=1,thickness=$tk -yscales=id=beta $rootname.twi \
         -col=s,betay -graphic=line,type=2,thickness=$tk -yscales=id=beta $rootname.twi \
         -col=s,etax -graphic=line,type=3,thickness=$tk -yscales=id=etax $rootname.twi \
@@ -78,7 +81,7 @@ if [ $plotname == "psi" ]; then
         echo "Error: $rootname.twi or $rootname.mag not found!"; exit 1
     fi
     sddsplot \
-        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,psix -graphic=line,type=1,thickness=$tk -yscales=id=psi $rootname.twi \
         -col=s,psiy -graphic=line,type=2,thickness=$tk -yscales=id=psi $rootname.twi \
         -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
@@ -93,7 +96,7 @@ if [ $plotname == "beta" ]; then
         echo "Error: $rootname.twi or $rootname.mag not found!"; exit 1
     fi
     sddsplot \
-        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,betax -graphic=line,type=1,thickness=$tk -yscales=id=beta $rootname.twi \
         -col=s,betay -graphic=line,type=2,thickness=$tk -yscales=id=beta $rootname.twi \
         -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
@@ -108,7 +111,7 @@ if [ $plotname == "eta" ]; then
         echo "Error: $rootname.twi or $rootname.mag not found!"; exit 1
     fi
     sddsplot \
-        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,etax -graphic=line,type=3,thickness=$tk -yscales=id=etax $rootname.twi \
         -col=s,etaxp -graphic=line,type=6,thickness=$tk -yscales=id=etaxp $rootname.twi \
         -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
@@ -123,7 +126,7 @@ if [ $(echo $plotname | cut -c 1) == "R" ] || [ $(echo $plotname | cut -c 1) == 
         echo "Error: $rootname.mat or $rootname.mag not found!"; exit 1
     fi
     sddsplot \
-        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,$plotname -graphic=line,type=1,thickness=$tk -yscales=id=$plotname -factor=yMultiplier=1e3 $rootname.mat \
         -yLabel="$(echo $plotname | cut -c 1)\$b$(echo $plotname | cut -c 2-)\$n (mm)" \
         -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
@@ -138,7 +141,7 @@ if [ $plotname == "longitudinalDispersion" ]; then
         echo "Error: $rootname.mat or $rootname.mag not found!"; exit 1
     fi
     sddsplot \
-        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,R56 -graphic=line,type=1,thickness=$tk -yscales=id=R56 -factor=yMultiplier=1e3 $rootname.mat \
         -yLabel="R\$b56\$n \(mm\)" \
         -col=s,T566 -graphic=line,type=2,thickness=$tk -yscales=id=T566 -factor=yMultiplier=1e3 $rootname.mat \
@@ -155,7 +158,7 @@ if [ $plotname == "x" ]; then
         echo "Error: $rootname.flr or $rootname.mag not found!"; exit 1
     fi               
     sddsplot \
-        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,X -graphic=line,type=1,thickness=$tk -yscales=id=x $rootname.flr \
         -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
         -overlay=xmode=normal,yfactor=$pyfactor,yoffset=$pyoffset -title= \
@@ -169,7 +172,7 @@ if [ $plotname == "betaBeam" ]; then
         echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
     fi
     sddsplot \
-        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,betaxBeam -graphic=line,type=1,thickness=$tk -yscales=id=beta $rootname.sig \
         -col=s,betayBeam -graphic=line,type=2,thickness=$tk -yscales=id=beta $rootname.sig \
         -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \
@@ -184,7 +187,7 @@ if [ $plotname == "Sxy" ]; then
         echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
     fi               
     sddsplot \
-        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,Sx -graphic=line,type=1,thickness=$tk -yscales=id=beamSize -factor=yMultiplier=1e3 $rootname.sig \
         -col=s,Sy -graphic=line,type=2,thickness=$tk -yscales=id=beamSize -factor=yMultiplier=1e3 \
         -yLabel="\$gs\$r\$bx\$n\, \$gs\$r\$by\$n \(mm\)" $rootname.sig \
@@ -200,7 +203,7 @@ if [ $plotname == "betaBeam" ]; then
         echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
     fi               
     sddsplot \
-        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -split=page -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,betaxBeam -graphic=line,type=1,thickness=$tk -yscales=id=betaBeam $rootname.sig \
         -col=s,betayBeam -graphic=line,type=2,thickness=$tk -yscales=id=betaBeam \
         -yLabel="\$gb\$r\$bx\,beam\$n\, \$gb\$r\$by\,beam\$n \(m\)" $rootname.sig \
@@ -216,7 +219,7 @@ if [ $plotname == "enxy" ]; then
         echo "Error: $rootname.sig or $rootname.mag not found!"; exit 1
     fi               
     sddsplot \
-        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,enx -graphic=line,type=1,thickness=$tk -yscales=id=emittance -factor=yMultiplier=1e6 \
         -yLabel="\$ge\$r\$bx\,n\$n\, \$ge\$r\$by\,n\$n \(\$gm\$rm\)" $rootname.sig \
         -col=s,eny -graphic=line,type=2,thickness=$tk -yscales=id=emittance -factor=yMultiplier=1e6 \
@@ -241,7 +244,7 @@ if [ $plotname == "St" ]; then
         tUnit=ps
     fi
     sddsplot \
-        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax \
+        -unsup=y -legend -thickness=$tk -scales=$xMin,$xMax,$yMin,$yMax -offset=xChange=$s0 \
         -col=s,St -graphic=line,type=1,thickness=$tk -yscales=id=bunchLength -factor=yMultiplier=$yMtpl \
         -yLabel="\$gs\$r\$bt\$n \($tUnit\)" $rootname.sig \
         -col=s,Profile -graphic=line,type=0,thickness=$tk $rootname.mag \

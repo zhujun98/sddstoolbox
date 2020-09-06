@@ -356,6 +356,7 @@ elif [ $plottype == "l" ]; then
 elif [ $plottype == "t" ]; then
     transverse_phasespace_plot x-xp x xp
     transverse_phasespace_plot y-yp y yp
+    transverse_phasespace_plot x-y x y
 elif [ $plottype == "s" ]; then
     bunch_shape_plot t-x x
     bunch_shape_plot t-y y

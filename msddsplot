@@ -12,8 +12,8 @@ show_usage()
 {
     echo -e "\nUsage: msddsplot <filename> <filetype> -<short option> --<long option> <value>"
     echo -e "\nfiletype: i (IMPACT-T/Z), a (ASTRA), e (ELEGANT), c (CSRTrack), g (GPT)"
-    echo -e "\n-l, -s, -t: plottype, l (longitudinal PS), t (transverse PS), s (beam shape)"
-    echo -e "\n-p: output png file, otherwise plot on screen"
+    echo -e "\n-l, -s, -t, -p: plottype, l (longitudinal PS), t (transverse PS), s (beam shape), p (transverse profile)"
+    echo -e "\n--png: output png file, otherwise plot on screen"
     echo -e "\n--charge: bunch charge (C)"
     echo -e "\n--xMin, --xMax, --yMin, --yMax: ranges of the plot"
     echo -e "\n--slicePercent: relative bunch length of the central slice (4-sigma for total)"
@@ -50,7 +50,7 @@ plotSlice=0
 dotSize=0 # size of dot
 color=blue
 
-TEMP=`getopt -o lts -l charge:,tUnit:,IUnit:,xMin:,xMax:,yMin:,yMax:,slicePercent:,zBins:,dotSize:,color:,png,plotSlice -- "${@:3}"`
+TEMP=`getopt -o ltsp -l charge:,tUnit:,IUnit:,xMin:,xMax:,yMin:,yMax:,slicePercent:,zBins:,dotSize:,color:,png,plotSlice -- "${@:3}"`
 if [ $? -ne 0 ]; then exit 1; fi
 
 eval set -- "$TEMP"
@@ -60,6 +60,7 @@ while true; do
         -l) plottype=l; shift;;
         -s) plottype=s; shift;;
         -t) plottype=t; shift;;
+        -p) plottype=p; shift;;
         --charge) charge=$2; shift 2;;
         --tUnit) tUnit=$2; shift 2;;
         --IUnit) IUnit=$2; shift 2;;
@@ -242,6 +243,17 @@ bunch_shape_plot() {
         -labelsize=0.03 -title= -topline= -device=$outputDevice
 }
 
+### transverse profile plot (x, y)
+transverse_profile_plot() {
+    set_output_device x-y
+    
+    sddsplot \
+        $rootname -graphic=dot,type=$color,subtype=$dotSize -thickness=$tk \
+        -col=x,y -factor=xMultiplier=1e3,yMultiplier=1e3 \
+        -xLabel="x \(mm\)" -yLabel="y \(mm\)" \
+        -labelsize=0.03 -title= -topline= -device=$outputDevice
+}
+
 
 ### Analyze the whole beam.
 ###
@@ -356,10 +368,11 @@ elif [ $plottype == "l" ]; then
 elif [ $plottype == "t" ]; then
     transverse_phasespace_plot x-xp x xp
     transverse_phasespace_plot y-yp y yp
-    transverse_phasespace_plot x-y x y
 elif [ $plottype == "s" ]; then
     bunch_shape_plot t-x x
     bunch_shape_plot t-y y
+elif [ $plottype == "p" ]; then
+    transverse_profile_plot
 else
     echo -e "\nUnknown plottype!"    
 fi
